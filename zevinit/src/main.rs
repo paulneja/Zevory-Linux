@@ -3,13 +3,32 @@
 mod console;
 mod kmsg;
 mod mount;
+mod proc;
+mod signal;
 mod sys;
 
+use proc::{Spec, Table};
+use signal::Signals;
 use std::process;
 
 const READY_MARKER: &str = "bootstrap OK, shell ready";
 
-const SHELLS: &[(&str, &[&str])] = &[("/bin/sh", &["sh"]), ("/bin/busybox", &["busybox", "sh"])];
+const RESPAWN_IS_TOO_FAST: u64 = 1;
+
+const SHELLS: &[Spec] = &[
+    Spec {
+        name: "shell",
+        path: "/bin/sh",
+        argv: &["sh"],
+        wants_own_session: true,
+    },
+    Spec {
+        name: "shell",
+        path: "/bin/busybox",
+        argv: &["busybox", "sh"],
+        wants_own_session: true,
+    },
+];
 
 fn main() {
     install_panic_hook();
@@ -29,15 +48,44 @@ fn main() {
         Err(e) => kmsg::log(&format!("no console ({e}), carrying on without one")),
     }
 
+    let signals = match Signals::install(&[libc::SIGCHLD]) {
+        Ok(s) => s,
+        Err(e) => park(&format!("cannot watch for child exits ({e})")),
+    };
+
     banner(failed);
     kmsg::log(READY_MARKER);
 
-    for (path, argv) in SHELLS {
-        let e = sys::exec(path, argv);
-        kmsg::log(&format!("could not exec {path}: {e}"));
-    }
+    let Some(shell) = SHELLS.iter().find(|s| s.is_available()) else {
+        park("no shell in the initramfs");
+    };
 
-    park("no shell left to hand over to");
+    supervise(&mut Table::new(), &signals, shell)
+}
+
+fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> ! {
+    let mut last_exit_was_immediate = false;
+
+    loop {
+        if table.running() == 0 {
+            if last_exit_was_immediate {
+                sys::sleep_secs(1);
+            }
+            if let Err(e) = table.spawn(shell) {
+                park(&format!("cannot start {} ({e})", shell.path));
+            }
+        }
+
+        match signals.wait() {
+            Ok(libc::SIGCHLD) => {
+                last_exit_was_immediate = signal::reap_all(table)
+                    .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
+            }
+            Ok(other) => kmsg::log(&format!("ignoring signal {other}")),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => park(&format!("lost the signal stream ({e})")),
+        }
+    }
 }
 
 fn banner(failed: usize) {
@@ -66,7 +114,7 @@ fn install_panic_hook() {
 
 #[cfg(test)]
 mod tests {
-    use super::READY_MARKER;
+    use super::{READY_MARKER, SHELLS};
 
     #[test]
     fn diagnose_boot_still_greps_for_our_marker() {
@@ -81,5 +129,24 @@ mod tests {
             "{} stopped grepping for {READY_MARKER:?}",
             script.display()
         );
+    }
+
+    #[test]
+    fn every_shell_passes_its_own_name_as_argv0() {
+        for shell in SHELLS {
+            let argv0 = shell.argv.first().expect("a shell needs an argv[0]");
+            assert!(
+                shell.path.ends_with(argv0),
+                "{} would be exec'd as {argv0:?}, which picks the wrong busybox applet",
+                shell.path
+            );
+        }
+    }
+
+    #[test]
+    fn shells_get_their_own_session() {
+        for shell in SHELLS {
+            assert!(shell.wants_own_session, "{} needs job control", shell.path);
+        }
     }
 }

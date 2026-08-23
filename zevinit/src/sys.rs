@@ -76,9 +76,21 @@ pub fn dup2_stdio(fd: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
+pub fn new_session() -> io::Result<()> {
+    if unsafe { libc::setsid() } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+pub fn set_ctty(fd: libc::c_int, steal: bool) -> io::Result<()> {
+    let arg: libc::c_int = if steal { 1 } else { 0 };
+    check(unsafe { libc::ioctl(fd, libc::TIOCSCTTY, arg) })
+}
+
 pub fn take_ctty(fd: libc::c_int) -> io::Result<()> {
-    unsafe { libc::setsid() };
-    check(unsafe { libc::ioctl(fd, libc::TIOCSCTTY, 0) })
+    let _already_a_session_leader = new_session();
+    set_ctty(fd, false)
 }
 
 pub fn pause() {
@@ -120,4 +132,91 @@ mod tests {
         assert_eq!(makedev(8, 256), 0x10_0800);
         assert_eq!(makedev(0, 0), 0);
     }
+}
+
+pub enum Fork {
+    Parent(libc::pid_t),
+    Child,
+}
+
+pub fn fork() -> io::Result<Fork> {
+    match unsafe { libc::fork() } {
+        -1 => Err(io::Error::last_os_error()),
+        0 => Ok(Fork::Child),
+        pid => Ok(Fork::Parent(pid)),
+    }
+}
+
+pub fn exit_child(code: libc::c_int) -> ! {
+    unsafe { libc::_exit(code) }
+}
+
+pub enum Reaped {
+    Child(libc::pid_t, libc::c_int),
+    NothingPending,
+}
+
+pub fn reap_one() -> Reaped {
+    let mut status: libc::c_int = 0;
+    match unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) } {
+        pid if pid > 0 => Reaped::Child(pid, status),
+        _ => Reaped::NothingPending,
+    }
+}
+
+pub fn exit_code(status: libc::c_int) -> Option<libc::c_int> {
+    libc::WIFEXITED(status).then(|| libc::WEXITSTATUS(status))
+}
+
+pub fn termination_signal(status: libc::c_int) -> Option<libc::c_int> {
+    libc::WIFSIGNALED(status).then(|| libc::WTERMSIG(status))
+}
+
+fn sigset_of(signals: &[libc::c_int]) -> libc::sigset_t {
+    let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+    unsafe { libc::sigemptyset(&mut set) };
+    for &s in signals {
+        unsafe { libc::sigaddset(&mut set, s) };
+    }
+    set
+}
+
+pub fn block_signals(signals: &[libc::c_int]) -> io::Result<()> {
+    let set = sigset_of(signals);
+    check(unsafe { libc::sigprocmask(libc::SIG_BLOCK, &set, std::ptr::null_mut()) })
+}
+
+pub fn unblock_all_signals() -> io::Result<()> {
+    let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+    unsafe { libc::sigfillset(&mut set) };
+    check(unsafe { libc::sigprocmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut()) })
+}
+
+pub fn signal_fd(signals: &[libc::c_int]) -> io::Result<libc::c_int> {
+    let set = sigset_of(signals);
+    let fd = unsafe { libc::signalfd(-1, &set, libc::SFD_CLOEXEC) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(fd)
+}
+
+pub fn read_signal(fd: libc::c_int) -> io::Result<libc::c_int> {
+    let mut info: libc::signalfd_siginfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::signalfd_siginfo>();
+    let n = unsafe { libc::read(fd, (&raw mut info).cast::<libc::c_void>(), size) };
+    if n < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.ssi_signo as libc::c_int)
+}
+
+pub fn monotonic_secs() -> u64 {
+    let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    ts.tv_sec as u64
+}
+
+pub fn sleep_secs(secs: libc::c_uint) {
+    unsafe { libc::sleep(secs) };
 }
