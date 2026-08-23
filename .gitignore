@@ -1,0 +1,20 @@
+# generated stuff, all of it out of tree
+/build/
+/sources/
+*.img
+*.iso
+*.qcow2
+
+# rust, for later
+/target/
+Cargo.lock
+
+# editor / os
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# never commit these
+*.local.toml
+.env
