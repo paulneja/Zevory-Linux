@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#[cfg(not(target_env = "musl"))]
+compile_error!(
+    "zevinit must be built against musl. run cargo from inside zevinit/ so \
+     .cargo/config.toml applies, or pass --target x86_64-unknown-linux-musl"
+);
+
 mod console;
 mod kmsg;
 mod mount;
