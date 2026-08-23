@@ -1,0 +1,22 @@
+[package]
+name = "zevinit"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "Zevory init, PID 1"
+publish = false
+
+[dependencies]
+# the only dependency on purpose. PID 1 stays small, and every syscall we make
+# should be one we can point at in sys.rs
+libc = "0.2"
+
+[profile.release]
+# a panic in PID 1 kills PID 1, which the kernel turns into a panic of its own.
+# abort keeps the binary small, and the hook in main.rs runs either way
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
