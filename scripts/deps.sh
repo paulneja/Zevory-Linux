@@ -3,7 +3,6 @@
 set -euo pipefail
 
 PKGS=(
-  # kernel and general build
   base-devel
   git
   bc
@@ -12,14 +11,12 @@ PKGS=(
   pahole
   ncurses
 
-  # fetch and verify. these ride in with pacman anyway, but the fetch scripts
-  # call them straight so we list them instead of leaning on that
+
   curl
   gnupg
   tar
   bzip2
 
-  # initramfs and iso
   cpio
   xz
   zstd
@@ -27,11 +24,9 @@ PKGS=(
   libisoburn
   mtools
 
-  # testing
   qemu-system-x86
   edk2-ovmf
 
-  # zevinit
   rustup
 )
 
@@ -46,7 +41,6 @@ install() {
 echo "installing: ${PKGS[*]}"
 
 ARGS=(-S --needed)
-# no tty means CI or a container, where stopping on a y/n just hangs
 [ -t 0 ] || ARGS+=(--noconfirm)
 
 if ! install "${ARGS[@]}"; then
@@ -68,9 +62,7 @@ if ! install "${ARGS[@]}"; then
   fi
 fi
 
-# zevinit links static against musl for the same reason busybox does. rust ships
-# its own musl for this target, so the musl package above is for busybox, not
-# for this
+
 if ! rustup show active-toolchain >/dev/null 2>&1; then
   echo "no rust toolchain yet, installing stable"
   rustup default stable

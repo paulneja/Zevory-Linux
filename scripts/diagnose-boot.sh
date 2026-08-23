@@ -20,8 +20,7 @@ check() {
 echo "diagnosing $LOG"
 echo ""
 
-# if the kernel never printed a thing then qemu died before booting, and the
-# checks below would all fail and point at the kernel. chased that ghost once
+
 if ! grep -q "Linux version" "$LOG"; then
   echo "FAIL - the kernel never started, so the rest would just be noise"
   echo ""
