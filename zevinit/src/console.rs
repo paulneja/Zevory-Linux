@@ -36,3 +36,25 @@ pub fn attach_stdio() -> io::Result<()> {
     let fd = sys::open_rw("/dev/console")?;
     sys::dup2_stdio(fd)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::NODES;
+
+    #[test]
+    fn numbers_match_the_kernel_ones() {
+        // these live in Documentation/admin-guide/devices.txt, they are not
+        // ours to pick
+        assert_eq!(NODES[0], ("/dev/null", 0o666, 1, 3));
+        assert_eq!(NODES[1], ("/dev/console", 0o600, 5, 1));
+        assert_eq!(NODES[2], ("/dev/tty", 0o666, 5, 0));
+    }
+
+    #[test]
+    fn modes_carry_no_type_bits() {
+        // mknod_char ors S_IFCHR in, so anything extra here would fight it
+        for &(path, mode, _, _) in NODES {
+            assert_eq!(mode & !0o777, 0, "{path} has more than permission bits");
+        }
+    }
+}

@@ -86,6 +86,11 @@ pub fn dup2_stdio(fd: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
+/// Sleeps until any signal shows up. Callers loop on it.
+pub fn pause() {
+    unsafe { libc::pause() };
+}
+
 /// Only returns if the exec failed, so the error is the whole return value.
 pub fn exec(path: &str, args: &[&str]) -> io::Error {
     let Ok(cpath) = cstr(path) else {

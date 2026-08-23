@@ -3,6 +3,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CURL=(curl -fL --retry 5 --retry-delay 3 --retry-all-errors)
+# without a tty the progress bar turns a build log into a wall of noise
+[ -t 1 ] || CURL+=(-sS)
 VERSION="$(tr -d '[:space:]' < "$ROOT/boot/limine/VERSION")"
 
 FPR="05D29860D0A0668AAEFB9D691F3C021BECA23821"
@@ -29,8 +33,8 @@ gpg --homedir "$GNUPGHOME" --list-keys "$FPR" >/dev/null 2>&1 || {
 }
 
 echo "fetching Limine $VERSION binaries..."
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$TAR" "$BASE_URL/$TAR"
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
+"${CURL[@]}" -o "$DL_DIR/$TAR" "$BASE_URL/$TAR"
+"${CURL[@]}" -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
 
 gpg --homedir "$GNUPGHOME" --verify "$DL_DIR/$SIG" "$DL_DIR/$TAR"
 

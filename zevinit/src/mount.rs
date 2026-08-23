@@ -59,3 +59,36 @@ fn mount_one(v: &Vfs) -> io::Result<()> {
         Err(e) => Err(e),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TABLE;
+    use std::collections::HashSet;
+
+    #[test]
+    fn targets_are_absolute_and_unique() {
+        let mut seen = HashSet::new();
+        for v in TABLE {
+            assert!(v.target.starts_with('/'), "{} is not absolute", v.target);
+            assert!(seen.insert(v.target), "{} shows up twice", v.target);
+        }
+    }
+
+    #[test]
+    fn proc_and_sys_come_first() {
+        // whatever breaks after them needs somewhere to complain from
+        assert_eq!(TABLE[0].target, "/proc");
+        assert_eq!(TABLE[1].target, "/sys");
+    }
+
+    #[test]
+    fn nothing_is_mounted_suid() {
+        for v in TABLE {
+            assert!(
+                v.flags & libc::MS_NOSUID != 0,
+                "{} would let setuid bits through",
+                v.target
+            );
+        }
+    }
+}

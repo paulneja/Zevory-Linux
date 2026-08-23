@@ -35,20 +35,37 @@ PKGS=(
   rustup
 )
 
+install() {
+  if [ "$(id -u)" -eq 0 ]; then
+    pacman "$@" "${PKGS[@]}"
+  else
+    sudo pacman "$@" "${PKGS[@]}"
+  fi
+}
+
 echo "installing: ${PKGS[*]}"
 
-# -Syu and not -S: on a rolling distro installing against a stale database is
-# how you end up with a half upgraded system. it does mean this upgrades yours
-ARGS=(-Syu --needed)
+ARGS=(-S --needed)
 # no tty means CI or a container, where stopping on a y/n just hangs
 [ -t 0 ] || ARGS+=(--noconfirm)
 
-# in a container or an install chroot you are already root and sudo is usually
-# not even installed, so reaching for it there just breaks the script
-if [ "$(id -u)" -eq 0 ]; then
-  pacman "${ARGS[@]}" "${PKGS[@]}"
-else
-  sudo pacman "${ARGS[@]}" "${PKGS[@]}"
+if ! install "${ARGS[@]}"; then
+  echo ""
+  echo "pacman could not install that. the usual cause is a package database"
+  echo "older than the mirrors, and -Syu is what fixes it. that upgrades the"
+  echo "whole system though, which on a rolling distro is the normal thing to"
+  echo "do but is still your call, not this script's."
+  echo ""
+  if [ -t 0 ]; then
+    read -r -p "run pacman -Syu now? [y/N] " answer
+    case "$answer" in
+      [yY]*) install -Syu --needed ;;
+      *) echo "nothing was installed. run 'sudo pacman -Syu' and try again."; exit 1 ;;
+    esac
+  else
+    echo "no tty here, so nothing to ask. run 'pacman -Syu' and try again."
+    exit 1
+  fi
 fi
 
 # zevinit links static against musl for the same reason busybox does. rust ships
