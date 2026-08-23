@@ -7,8 +7,16 @@ cd "$ROOT"
 
 if [ "$#" -gt 0 ]; then
   FILES=("$@")
-else
+elif git rev-parse --git-dir >/dev/null 2>&1; then
   mapfile -t FILES < <(git ls-files '*.rs' '*.sh' '*.toml' 'initramfs/init')
+else
+  mapfile -t FILES < <(find . -path ./zevinit/target -prune -o \
+    \( -name '*.rs' -o -name '*.sh' -o -name '*.toml' -o -path './initramfs/init' \) -print)
+fi
+
+if [ "${#FILES[@]}" -eq 0 ]; then
+  echo "check-comments: found nothing to check, refusing to report success" >&2
+  exit 1
 fi
 
 found=0

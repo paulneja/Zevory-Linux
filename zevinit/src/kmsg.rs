@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use crate::sys;
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -12,5 +13,9 @@ pub fn log(msg: &str) {
         }
     }
 
-    eprint!("{line}");
+    sys::write_fd(libc::STDERR_FILENO, line.as_bytes());
+}
+
+pub fn to_console(msg: &str) {
+    sys::write_fd(libc::STDOUT_FILENO, msg.as_bytes());
 }

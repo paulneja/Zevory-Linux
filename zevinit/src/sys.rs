@@ -226,3 +226,15 @@ pub fn monotonic_secs() -> u64 {
 pub fn sleep_secs(secs: libc::c_uint) {
     unsafe { libc::sleep(secs) };
 }
+
+pub fn write_fd(fd: libc::c_int, bytes: &[u8]) {
+    let mut done = 0;
+    while done < bytes.len() {
+        let left = bytes.len() - done;
+        let n = unsafe { libc::write(fd, bytes[done..].as_ptr().cast::<libc::c_void>(), left) };
+        if n <= 0 {
+            return;
+        }
+        done += n as usize;
+    }
+}

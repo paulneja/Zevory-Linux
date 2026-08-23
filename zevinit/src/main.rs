@@ -95,12 +95,11 @@ fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> ! {
 }
 
 fn banner(failed: usize) {
-    println!();
-    println!("Zevory Linux");
-    println!();
+    kmsg::to_console("\nZevory Linux\n\n");
     if failed > 0 {
-        println!("  {failed} filesystem(s) did not mount, look above for which");
-        println!();
+        kmsg::to_console(&format!(
+            "  {failed} filesystem(s) did not mount, look above for which\n\n"
+        ));
     }
 }
 
