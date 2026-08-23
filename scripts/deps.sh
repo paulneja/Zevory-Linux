@@ -3,22 +3,33 @@
 set -euo pipefail
 
 PKGS=(
-  base-devel  
+  # kernel and general build
+  base-devel
   git
   bc
-  flex
-  bison
-  openssl      
-  elfutils    
-  pahole       
-  ncurses     
-  cpio         
+  openssl
+  elfutils
+  pahole
+  ncurses
+
+  # fetch and verify. these ride in with pacman anyway, but the fetch scripts
+  # call them straight so we list them instead of leaning on that
+  curl
+  gnupg
+  tar
+  bzip2
+
+  # initramfs and iso
+  cpio
   xz
   zstd
-  musl         
-  nasm         
-  libisoburn   
-  mtools       
+  musl
+  libisoburn
+  mtools
+
+  # testing
+  qemu-system-x86
+  edk2-ovmf
 )
 
 echo "installing: ${PKGS[*]}"
