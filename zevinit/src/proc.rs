@@ -45,13 +45,17 @@ impl Table {
 
     pub fn spawn(&mut self, spec: &'static Spec) -> io::Result<libc::pid_t> {
         let pid = spawn(spec)?;
+        self.track(spec.name, pid);
+        Ok(pid)
+    }
+
+    fn track(&mut self, name: &'static str, pid: libc::pid_t) {
         self.entries.push(Entry {
-            name: spec.name,
+            name,
             pid,
             state: State::Running,
             started_at: sys::monotonic_secs(),
         });
-        Ok(pid)
     }
 
     pub fn running(&self) -> usize {
@@ -122,6 +126,10 @@ mod tests {
         code << 8
     }
 
+    fn killed(signal: i32) -> libc::c_int {
+        signal
+    }
+
     #[test]
     fn a_normal_exit_keeps_its_code() {
         assert_eq!(state_from(exited(0)), State::Exited(0));
@@ -130,13 +138,83 @@ mod tests {
 
     #[test]
     fn a_signal_death_is_not_an_exit() {
-        assert_eq!(state_from(libc::SIGKILL), State::Killed(libc::SIGKILL));
+        assert_eq!(state_from(killed(libc::SIGKILL)), State::Killed(libc::SIGKILL));
+        assert_eq!(state_from(killed(libc::SIGTERM)), State::Killed(libc::SIGTERM));
     }
 
     #[test]
     fn an_unknown_pid_is_not_recorded() {
         let mut table = Table::new();
+        table.track("shell", 100);
         assert!(table.record_exit(4242, exited(0)).is_none());
+        assert_eq!(table.running(), 1);
+    }
+
+    #[test]
+    fn recording_an_exit_stops_counting_it_as_running() {
+        let mut table = Table::new();
+        table.track("shell", 100);
+        assert_eq!(table.running(), 1);
+
+        let gone = table.record_exit(100, exited(3)).expect("100 was tracked");
+        assert_eq!(gone.name, "shell");
+        assert_eq!(gone.pid, 100);
+        assert_eq!(gone.state, State::Exited(3));
+        assert_eq!(table.running(), 0);
+    }
+
+    #[test]
+    fn the_same_pid_is_not_reaped_twice() {
+        let mut table = Table::new();
+        table.track("shell", 100);
+        assert!(table.record_exit(100, exited(0)).is_some());
+        assert!(table.record_exit(100, exited(0)).is_none());
+    }
+
+    #[test]
+    fn a_recycled_pid_lands_on_the_live_entry() {
+        let mut table = Table::new();
+        table.track("first", 100);
+        table.record_exit(100, exited(0));
+        table.track("second", 100);
+
+        let gone = table.record_exit(100, exited(9)).expect("the live 100");
+        assert_eq!(gone.name, "second");
+        assert_eq!(table.running(), 0);
+    }
+
+    #[test]
+    fn several_children_are_tracked_independently() {
+        let mut table = Table::new();
+        for pid in 200..205 {
+            table.track("worker", pid);
+        }
+        assert_eq!(table.running(), 5);
+
+        for pid in 200..205 {
+            assert!(table.record_exit(pid, exited(0)).is_some());
+        }
+        assert_eq!(table.running(), 0);
+    }
+
+    #[test]
+    fn forgetting_drops_the_dead_and_keeps_the_living() {
+        let mut table = Table::new();
+        table.track("dead", 100);
+        table.track("alive", 101);
+        table.record_exit(100, exited(0));
+
+        table.forget_finished();
+        assert_eq!(table.running(), 1);
+        assert!(table.record_exit(101, exited(0)).is_some());
+        assert!(table.record_exit(100, exited(0)).is_none());
+    }
+
+    #[test]
+    fn an_empty_table_has_nothing_running() {
+        let mut table = Table::new();
+        assert_eq!(table.running(), 0);
+        table.forget_finished();
         assert_eq!(table.running(), 0);
     }
 }

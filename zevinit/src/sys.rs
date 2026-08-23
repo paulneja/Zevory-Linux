@@ -208,6 +208,12 @@ pub fn read_signal(fd: libc::c_int) -> io::Result<libc::c_int> {
     if n < 0 {
         return Err(io::Error::last_os_error());
     }
+    if n as usize != size {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "short read from signalfd",
+        ));
+    }
     Ok(info.ssi_signo as libc::c_int)
 }
 

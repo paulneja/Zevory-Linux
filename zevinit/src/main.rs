@@ -54,13 +54,19 @@ fn main() {
     };
 
     banner(failed);
-    kmsg::log(READY_MARKER);
 
     let Some(shell) = SHELLS.iter().find(|s| s.is_available()) else {
         park("no shell in the initramfs");
     };
 
-    supervise(&mut Table::new(), &signals, shell)
+    let mut table = Table::new();
+    if let Err(e) = table.spawn(shell) {
+        park(&format!("cannot start {} ({e})", shell.path));
+    }
+
+    kmsg::log(READY_MARKER);
+
+    supervise(&mut table, &signals, shell)
 }
 
 fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> ! {
