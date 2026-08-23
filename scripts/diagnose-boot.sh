@@ -20,7 +20,6 @@ check() {
 echo "diagnosing $LOG"
 echo ""
 
-
 if ! grep -q "Linux version" "$LOG"; then
   echo "FAIL - the kernel never started, so the rest would just be noise"
   echo ""

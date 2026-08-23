@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Thin wrappers over the handful of syscalls PID 1 needs.
-//!
-//! Every `unsafe` block in zevinit lives in this file. If you find yourself
-//! reaching for one somewhere else, add a wrapper here instead.
-
 use std::ffi::CString;
 use std::io;
 
@@ -17,12 +12,9 @@ fn check(rc: libc::c_int) -> io::Result<()> {
 }
 
 pub fn getpid() -> i32 {
-    // cannot fail
     unsafe { libc::getpid() }
 }
 
-/// Linux packs major/minor into dev_t with the minor split around the major.
-/// Doing it here rather than through libc keeps it visible and testable.
 pub fn makedev(major: u32, minor: u32) -> libc::dev_t {
     let major = major as u64;
     let minor = minor as u64;
@@ -68,12 +60,10 @@ pub fn mknod_char(path: &str, mode: u32, major: u32, minor: u32) -> io::Result<(
 
 pub fn open_rw(path: &str) -> io::Result<libc::c_int> {
     let p = cstr(path)?;
-    // no O_CLOEXEC, these are meant to survive into whatever we exec
     let fd = unsafe { libc::open(p.as_ptr(), libc::O_RDWR | libc::O_NOCTTY) };
     if fd < 0 { Err(io::Error::last_os_error()) } else { Ok(fd) }
 }
 
-/// Point stdin, stdout and stderr at `fd`, then drop the spare.
 pub fn dup2_stdio(fd: libc::c_int) -> io::Result<()> {
     for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO] {
         if unsafe { libc::dup2(fd, target) } < 0 {
@@ -86,12 +76,15 @@ pub fn dup2_stdio(fd: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
-/// Sleeps until any signal shows up. Callers loop on it.
+pub fn take_ctty(fd: libc::c_int) -> io::Result<()> {
+    unsafe { libc::setsid() };
+    check(unsafe { libc::ioctl(fd, libc::TIOCSCTTY, 0) })
+}
+
 pub fn pause() {
     unsafe { libc::pause() };
 }
 
-/// Only returns if the exec failed, so the error is the whole return value.
 pub fn exec(path: &str, args: &[&str]) -> io::Error {
     let Ok(cpath) = cstr(path) else {
         return io::Error::new(io::ErrorKind::InvalidInput, "nul byte in path");
@@ -116,16 +109,13 @@ mod tests {
 
     #[test]
     fn makedev_matches_known_nodes() {
-        // the three nodes /init used to mknod by hand
-        assert_eq!(makedev(1, 3), 0x0103); // /dev/null
-        assert_eq!(makedev(5, 1), 0x0501); // /dev/console
-        assert_eq!(makedev(5, 0), 0x0500); // /dev/tty
+        assert_eq!(makedev(1, 3), 0x0103);
+        assert_eq!(makedev(5, 1), 0x0501);
+        assert_eq!(makedev(5, 0), 0x0500);
     }
 
     #[test]
     fn makedev_splits_wide_minor() {
-        // a minor above 0xff moves into the high half instead of trampling the
-        // major, which is the whole reason this is not just (major << 8) | minor
         assert_eq!(makedev(8, 0), 0x0800);
         assert_eq!(makedev(8, 256), 0x10_0800);
         assert_eq!(makedev(0, 0), 0);

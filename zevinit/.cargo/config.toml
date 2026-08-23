@@ -1,6 +1,2 @@
-# static against musl for the same reason busybox is: glibc picks memcpy and
-# friends by ifunc at runtime and can land on AVX-512 that the cpu does not
-# have. in PID 1 that is not a crash, it is a kernel panic.
-# no target-cpu flag anywhere, the baseline is the point.
 [build]
 target = "x86_64-unknown-linux-musl"
