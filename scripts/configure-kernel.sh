@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT/kernel/VERSION")"
 SRC_DIR="$ROOT/sources/linux-$VERSION"

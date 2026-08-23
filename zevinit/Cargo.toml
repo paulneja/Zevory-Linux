@@ -1,0 +1,18 @@
+[package]
+name = "zevinit"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "Zevory init, PID 1"
+publish = false
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true

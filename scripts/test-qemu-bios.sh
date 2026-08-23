@@ -7,12 +7,21 @@ ISO="$ROOT/build/zevory-dev.iso"
 LOG="$ROOT/build/test-bios.log"
 
 [ -f "$ISO" ] || { echo "ERROR: $ISO missing, run scripts/build-iso.sh first" >&2; exit 1; }
-[ -c /dev/kvm ] || echo "warning: no /dev/kvm, running without acceleration" >&2
+command -v qemu-system-x86_64 >/dev/null || {
+  echo "ERROR: qemu-system-x86_64 not found, run scripts/deps.sh" >&2; exit 1; }
 
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+  ACCEL=(-enable-kvm -cpu host)
+  TIMEOUT="${TIMEOUT:-30}"
+else
+  echo "warning: no usable /dev/kvm, falling back to tcg (much slower)" >&2
+  ACCEL=(-cpu max)
+  TIMEOUT="${TIMEOUT:-120}"
+fi
 
-timeout 30 qemu-system-x86_64 \
+timeout "$TIMEOUT" qemu-system-x86_64 \
   -cdrom "$ISO" -boot d \
-  -nographic -no-reboot -enable-kvm -cpu host -m 512 \
+  -nographic -no-reboot "${ACCEL[@]}" -m 512 \
   < /dev/null > "$LOG" 2>&1 || true
 
 "$ROOT/scripts/diagnose-boot.sh" "$LOG"

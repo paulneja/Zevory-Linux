@@ -20,6 +20,20 @@ check() {
 echo "diagnosing $LOG"
 echo ""
 
+if ! grep -q "Linux version" "$LOG"; then
+  echo "FAIL - the kernel never started, so the rest would just be noise"
+  echo ""
+  if [ -s "$LOG" ]; then
+    echo "       first lines of the log:"
+    head -n 10 "$LOG" | sed 's/^/         /'
+  else
+    echo "       $LOG is empty. is qemu-system-x86_64 installed?"
+  fi
+  echo ""
+  echo "result: FAIL"
+  exit 1
+fi
+
 if grep -q "Kernel panic" "$LOG"; then
   echo "FAIL - kernel panic:"
   grep -A6 "Kernel panic" "$LOG" | sed 's/^/       /'

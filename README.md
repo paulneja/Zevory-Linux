@@ -70,8 +70,11 @@ boot log:
 ./scripts/diagnose-boot.sh build/test-bios.log
 ```
 
-The UEFI test needs OVMF firmware (`edk2-ovmf` on Arch). If yours lives somewhere else, set
-`$OVMF_CODE`.
+`deps.sh` pulls in the OVMF firmware the UEFI test needs. If yours lives somewhere else, point
+`$OVMF_CODE` and `$OVMF_VARS_TEMPLATE` at it.
+
+Without KVM both tests still run, they just drop to TCG and take a couple of minutes instead of
+seconds. Set `$TIMEOUT` if your machine needs longer.
 
 One gotcha: VirtualBox and KVM fight over VT-x. If a VirtualBox VM is running, QEMU with
 `-enable-kvm` dies with `KVM: entry failed, hardware error 0x0`. Not our bug.

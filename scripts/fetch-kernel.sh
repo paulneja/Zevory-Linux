@@ -3,6 +3,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CURL=(curl -fL --retry 5 --retry-delay 3 --retry-all-errors)
+[ -t 1 ] || CURL+=(-sS)
 VERSION="$(tr -d '[:space:]' < "$ROOT/kernel/VERSION")"
 SERIES="v$(echo "$VERSION" | cut -d. -f1).x"
 
@@ -37,8 +40,8 @@ for fpr in "$LINUS_KEY" "$GREG_KEY"; do
 done
 
 echo "fetching $TAR_XZ ($SERIES)..."
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$TAR_XZ" "$BASE_URL/$TAR_XZ"
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
+"${CURL[@]}" -o "$DL_DIR/$TAR_XZ" "$BASE_URL/$TAR_XZ"
+"${CURL[@]}" -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
 
 xz -dk "$DL_DIR/$TAR_XZ"
 

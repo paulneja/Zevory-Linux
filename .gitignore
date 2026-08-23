@@ -5,9 +5,9 @@
 *.iso
 *.qcow2
 
-# rust, for later
+# rust. target is generated, the lock is not: zevinit is a binary and we pin its
+# deps the same way we pin the kernel and busybox
 /target/
-Cargo.lock
 
 # editor / os
 .vscode/

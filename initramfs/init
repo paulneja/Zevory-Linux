@@ -27,11 +27,9 @@ echo "[zevory] arch   : $(uname -m)"
 echo "[zevory] uptime : $(cut -d. -f1 /proc/uptime)s"
 echo ""
 
-
 echo "[zevory] bootstrap OK, shell ready" > /dev/kmsg 2>/dev/null
 
 dmesg -n 4
-
 
 while true; do
 
@@ -43,6 +41,4 @@ while true; do
     echo ""
     sleep 1
 done
-
-# Poweroff and reboot work. Ctrl+Z works, but Ctrl+C doesn’t, no idea why. But anyway, poweroff and reboot work.
 
