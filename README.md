@@ -110,3 +110,7 @@ What we ship inside the ISO keeps its own license: the kernel and BusyBox are GP
 Limine is BSD-2-Clause, and musl (statically linked into BusyBox) is MIT. Those live next to
 our stuff as separate works, so there is no conflict, but handing the ISO to anyone means the
 GPLv2 source offer applies to the kernel and BusyBox.
+
+
+
+P.S. Technically, the project is further along in terms of completed stages and tasks, but we’re still testing, fixing, implementing, and improving things. More updates are coming soon 😛😛
