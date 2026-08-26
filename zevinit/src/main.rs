@@ -14,7 +14,7 @@ mod signal;
 mod sys;
 
 use proc::{Spec, Table};
-use signal::Signals;
+use signal::{Request, Signals};
 use std::process;
 
 const READY_MARKER: &str = "bootstrap OK, shell ready";
@@ -54,10 +54,16 @@ fn main() {
         Err(e) => kmsg::log(&format!("no console ({e}), carrying on without one")),
     }
 
-    let signals = match Signals::install(&[libc::SIGCHLD]) {
+    let signals = match Signals::install(signal::WATCHED) {
         Ok(s) => s,
-        Err(e) => park(&format!("cannot watch for child exits ({e})")),
+        Err(e) => park(&format!("cannot watch for signals ({e})")),
     };
+
+    if let Err(e) = sys::disable_ctrl_alt_del() {
+        kmsg::log(&format!(
+            "ctrl+alt+del stays with the kernel ({e}), it will reboot on the spot"
+        ));
+    }
 
     banner(failed);
 
@@ -89,15 +95,36 @@ fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> ! {
         }
 
         match signals.wait() {
-            Ok(libc::SIGCHLD) => {
-                last_exit_was_immediate = signal::reap_all(table)
-                    .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
-            }
-            Ok(other) => kmsg::log(&format!("ignoring signal {other}")),
+            Ok(signal) => match signal::classify(signal) {
+                Request::ChildChanged => {
+                    last_exit_was_immediate = signal::reap_all(table)
+                        .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
+                }
+                Request::Reboot => cannot_do_that_yet("reboot", signal),
+                Request::PowerOff => cannot_do_that_yet("poweroff", signal),
+                Request::Halt => cannot_do_that_yet("halt", signal),
+                Request::Reload => kmsg::log(&format!(
+                    "{} asked for a reload, zevinit has no configuration to reread",
+                    signal::name(signal)
+                )),
+                Request::Unknown(other) => {
+                    kmsg::log(&format!("nothing is wired to signal {other}"));
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(e) => park(&format!("lost the signal stream ({e})")),
         }
     }
+}
+
+fn cannot_do_that_yet(command: &str, signal: libc::c_int) {
+    kmsg::log(&format!(
+        "{} asked for {command}, which zevinit cannot do yet. staying up",
+        signal::name(signal)
+    ));
+    kmsg::to_console(&format!(
+        "\nzevinit cannot {command} yet. use '{command} -f' to have the kernel do it\n"
+    ));
 }
 
 fn banner(failed: usize) {
@@ -110,8 +137,11 @@ fn banner(failed: usize) {
 }
 
 fn park(why: &str) -> ! {
-    kmsg::log(&format!("{why}, so there is nothing left to do"));
-    kmsg::log("parked. reboot with the power button, or fix the initramfs");
+    let _ = sys::enable_ctrl_alt_del();
+    kmsg::log(&format!("{why}, so there is nothing left to do. parked"));
+    kmsg::to_console(&format!(
+        "\nzevinit: {why}, so there is nothing left to do.\npress ctrl+alt+del to reboot\n"
+    ));
     loop {
         sys::pause();
     }

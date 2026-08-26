@@ -97,6 +97,14 @@ pub fn pause() {
     unsafe { libc::pause() };
 }
 
+pub fn disable_ctrl_alt_del() -> io::Result<()> {
+    check(unsafe { libc::reboot(libc::RB_DISABLE_CAD) })
+}
+
+pub fn enable_ctrl_alt_del() -> io::Result<()> {
+    check(unsafe { libc::reboot(libc::RB_ENABLE_CAD) })
+}
+
 pub fn exec(path: &str, args: &[&str]) -> io::Error {
     let Ok(cpath) = cstr(path) else {
         return io::Error::new(io::ErrorKind::InvalidInput, "nul byte in path");
@@ -113,25 +121,6 @@ pub fn exec(path: &str, args: &[&str]) -> io::Error {
 
     unsafe { libc::execv(cpath.as_ptr(), argv.as_ptr()) };
     io::Error::last_os_error()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::makedev;
-
-    #[test]
-    fn makedev_matches_known_nodes() {
-        assert_eq!(makedev(1, 3), 0x0103);
-        assert_eq!(makedev(5, 1), 0x0501);
-        assert_eq!(makedev(5, 0), 0x0500);
-    }
-
-    #[test]
-    fn makedev_splits_wide_minor() {
-        assert_eq!(makedev(8, 0), 0x0800);
-        assert_eq!(makedev(8, 256), 0x10_0800);
-        assert_eq!(makedev(0, 0), 0);
-    }
 }
 
 pub enum Fork {
@@ -236,5 +225,24 @@ pub fn write_fd(fd: libc::c_int, bytes: &[u8]) {
             return;
         }
         done += n as usize;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::makedev;
+
+    #[test]
+    fn makedev_matches_known_nodes() {
+        assert_eq!(makedev(1, 3), 0x0103);
+        assert_eq!(makedev(5, 1), 0x0501);
+        assert_eq!(makedev(5, 0), 0x0500);
+    }
+
+    #[test]
+    fn makedev_splits_wide_minor() {
+        assert_eq!(makedev(8, 0), 0x0800);
+        assert_eq!(makedev(8, 256), 0x10_0800);
+        assert_eq!(makedev(0, 0), 0);
     }
 }
