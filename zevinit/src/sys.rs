@@ -105,6 +105,36 @@ pub fn enable_ctrl_alt_del() -> io::Result<()> {
     check(unsafe { libc::reboot(libc::RB_ENABLE_CAD) })
 }
 
+pub fn poll_readable(fd: libc::c_int, millis: libc::c_int) -> io::Result<bool> {
+    let mut watch = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    match unsafe { libc::poll(&mut watch, 1, millis) } {
+        -1 => Err(io::Error::last_os_error()),
+        0 => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+pub fn signal_group(leader: libc::pid_t, signal: libc::c_int) {
+    unsafe { libc::kill(-leader, signal) };
+}
+
+pub fn signal_everyone(signal: libc::c_int) {
+    unsafe { libc::kill(-1, signal) };
+}
+
+pub fn flush_filesystems() {
+    unsafe { libc::sync() };
+}
+
+pub fn hand_over_to_kernel(command: libc::c_int) -> io::Error {
+    unsafe { libc::reboot(command) };
+    io::Error::last_os_error()
+}
+
 pub fn exec(path: &str, args: &[&str]) -> io::Error {
     let Ok(cpath) = cstr(path) else {
         return io::Error::new(io::ErrorKind::InvalidInput, "nul byte in path");
@@ -142,15 +172,20 @@ pub fn exit_child(code: libc::c_int) -> ! {
 
 pub enum Reaped {
     Child(libc::pid_t, libc::c_int),
-    NothingPending,
+    StillRunning,
+    NoChildrenLeft,
 }
 
 pub fn reap_one() -> Reaped {
     let mut status: libc::c_int = 0;
-    match unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) } {
-        pid if pid > 0 => Reaped::Child(pid, status),
-        _ => Reaped::NothingPending,
+    let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
+    if pid > 0 {
+        return Reaped::Child(pid, status);
     }
+    if pid == 0 || io::Error::last_os_error().raw_os_error() != Some(libc::ECHILD) {
+        return Reaped::StillRunning;
+    }
+    Reaped::NoChildrenLeft
 }
 
 pub fn exit_code(status: libc::c_int) -> Option<libc::c_int> {
@@ -210,10 +245,6 @@ pub fn monotonic_secs() -> u64 {
     let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
     unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
     ts.tv_sec as u64
-}
-
-pub fn sleep_secs(secs: libc::c_uint) {
-    unsafe { libc::sleep(secs) };
 }
 
 pub fn write_fd(fd: libc::c_int, bytes: &[u8]) {

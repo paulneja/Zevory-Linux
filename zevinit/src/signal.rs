@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use crate::kmsg;
+use crate::power::Action;
 use crate::proc::{State, Table};
 use crate::sys::{self, Reaped};
 use std::io;
@@ -18,9 +19,7 @@ pub const WATCHED: &[libc::c_int] = &[
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Request {
     ChildChanged,
-    Reboot,
-    PowerOff,
-    Halt,
+    Shutdown(Action),
     Reload,
     Unknown(libc::c_int),
 }
@@ -28,9 +27,9 @@ pub enum Request {
 pub fn classify(signal: libc::c_int) -> Request {
     match signal {
         libc::SIGCHLD => Request::ChildChanged,
-        libc::SIGTERM | libc::SIGINT => Request::Reboot,
-        libc::SIGUSR2 => Request::PowerOff,
-        libc::SIGUSR1 | libc::SIGPWR => Request::Halt,
+        libc::SIGTERM | libc::SIGINT => Request::Shutdown(Action::Reboot),
+        libc::SIGUSR2 => Request::Shutdown(Action::PowerOff),
+        libc::SIGUSR1 | libc::SIGPWR => Request::Shutdown(Action::Halt),
         libc::SIGHUP => Request::Reload,
         other => Request::Unknown(other),
     }
@@ -49,6 +48,8 @@ pub fn name(signal: libc::c_int) -> &'static str {
     }
 }
 
+pub const UNTIL_SOMETHING_ARRIVES: libc::c_int = -1;
+
 pub struct Signals {
     fd: libc::c_int,
 }
@@ -61,15 +62,28 @@ impl Signals {
         })
     }
 
-    pub fn wait(&self) -> io::Result<libc::c_int> {
-        sys::read_signal(self.fd)
+    pub fn wait(&self, millis: libc::c_int) -> io::Result<Option<libc::c_int>> {
+        if sys::poll_readable(self.fd, millis)? {
+            return sys::read_signal(self.fd).map(Some);
+        }
+        Ok(None)
     }
 }
 
-pub fn reap_all(table: &mut Table) -> Option<u64> {
+pub struct Harvest {
+    pub shortest_life: Option<u64>,
+    pub children_left: bool,
+}
+
+pub fn reap_all(table: &mut Table) -> Harvest {
     let mut shortest_life = None;
 
-    while let Reaped::Child(pid, status) = sys::reap_one() {
+    let children_left = loop {
+        let (pid, status) = match sys::reap_one() {
+            Reaped::Child(pid, status) => (pid, status),
+            Reaped::StillRunning => break true,
+            Reaped::NoChildrenLeft => break false,
+        };
         let Some(gone) = table.record_exit(pid, status) else {
             kmsg::log(&format!("reaped orphan [{pid}]"));
             continue;
@@ -86,28 +100,32 @@ pub fn reap_all(table: &mut Table) -> Option<u64> {
             State::Running => {}
         }
         shortest_life = Some(shortest_life.map_or(gone.ran_for, |s: u64| s.min(gone.ran_for)));
-    }
+    };
 
     table.forget_finished();
-    shortest_life
+    Harvest {
+        shortest_life,
+        children_left,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Request, WATCHED, classify, name};
+    use crate::power::Action;
     use std::collections::HashSet;
 
     #[test]
     fn busybox_halt_poweroff_and_reboot_land_where_they_should() {
-        assert_eq!(classify(libc::SIGUSR1), Request::Halt);
-        assert_eq!(classify(libc::SIGUSR2), Request::PowerOff);
-        assert_eq!(classify(libc::SIGTERM), Request::Reboot);
+        assert_eq!(classify(libc::SIGUSR1), Request::Shutdown(Action::Halt));
+        assert_eq!(classify(libc::SIGUSR2), Request::Shutdown(Action::PowerOff));
+        assert_eq!(classify(libc::SIGTERM), Request::Shutdown(Action::Reboot));
     }
 
     #[test]
     fn ctrl_alt_del_reboots_and_power_failure_halts() {
-        assert_eq!(classify(libc::SIGINT), Request::Reboot);
-        assert_eq!(classify(libc::SIGPWR), Request::Halt);
+        assert_eq!(classify(libc::SIGINT), Request::Shutdown(Action::Reboot));
+        assert_eq!(classify(libc::SIGPWR), Request::Shutdown(Action::Halt));
     }
 
     #[test]

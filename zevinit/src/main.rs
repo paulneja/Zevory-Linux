@@ -9,17 +9,23 @@ compile_error!(
 mod console;
 mod kmsg;
 mod mount;
+mod power;
 mod proc;
 mod signal;
 mod sys;
 
+use power::Action;
 use proc::{Spec, Table};
-use signal::{Request, Signals};
+use signal::{Request, Signals, UNTIL_SOMETHING_ARRIVES};
 use std::process;
 
 const READY_MARKER: &str = "bootstrap OK, shell ready";
 
 const RESPAWN_IS_TOO_FAST: u64 = 1;
+
+const RESPAWN_BACKOFF_SECS: u64 = 1;
+
+const BACKOFF_CHECK_MS: libc::c_int = 100;
 
 const SHELLS: &[Spec] = &[
     Spec {
@@ -78,53 +84,57 @@ fn main() {
 
     kmsg::log(READY_MARKER);
 
-    supervise(&mut table, &signals, shell)
+    let action = supervise(&mut table, &signals, shell);
+    let failure = power::execute(action, &signals, &mut table);
+    park(&format!(
+        "the kernel refused to {} ({failure})",
+        action.name()
+    ))
 }
 
-fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> ! {
-    let mut last_exit_was_immediate = false;
+fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> Action {
+    let mut respawn_at = 0;
 
     loop {
-        if table.running() == 0 {
-            if last_exit_was_immediate {
-                sys::sleep_secs(1);
-            }
+        let idle = table.running() == 0;
+        if idle && sys::monotonic_secs() >= respawn_at {
             if let Err(e) = table.spawn(shell) {
                 park(&format!("cannot start {} ({e})", shell.path));
             }
         }
 
-        match signals.wait() {
-            Ok(signal) => match signal::classify(signal) {
-                Request::ChildChanged => {
-                    last_exit_was_immediate = signal::reap_all(table)
-                        .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
-                }
-                Request::Reboot => cannot_do_that_yet("reboot", signal),
-                Request::PowerOff => cannot_do_that_yet("poweroff", signal),
-                Request::Halt => cannot_do_that_yet("halt", signal),
-                Request::Reload => kmsg::log(&format!(
-                    "{} asked for a reload, zevinit has no configuration to reread",
-                    signal::name(signal)
-                )),
-                Request::Unknown(other) => {
-                    kmsg::log(&format!("nothing is wired to signal {other}"));
-                }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+        let how_long = if idle {
+            BACKOFF_CHECK_MS
+        } else {
+            UNTIL_SOMETHING_ARRIVES
+        };
+
+        let signal = match signals.wait(how_long) {
+            Ok(Some(signal)) => signal,
+            Ok(None) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => park(&format!("lost the signal stream ({e})")),
+        };
+
+        match signal::classify(signal) {
+            Request::ChildChanged => {
+                let died_at_once = signal::reap_all(table)
+                    .shortest_life
+                    .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
+                if died_at_once {
+                    respawn_at = sys::monotonic_secs() + RESPAWN_BACKOFF_SECS;
+                }
+            }
+            Request::Reload => kmsg::log(&format!(
+                "{} asked for a reload, zevinit has no configuration to reread",
+                signal::name(signal)
+            )),
+            Request::Shutdown(action) => return action,
+            Request::Unknown(other) => {
+                kmsg::log(&format!("nothing is wired to signal {other}"));
+            }
         }
     }
-}
-
-fn cannot_do_that_yet(command: &str, signal: libc::c_int) {
-    kmsg::log(&format!(
-        "{} asked for {command}, which zevinit cannot do yet. staying up",
-        signal::name(signal)
-    ));
-    kmsg::to_console(&format!(
-        "\nzevinit cannot {command} yet. use '{command} -f' to have the kernel do it\n"
-    ));
 }
 
 fn banner(failed: usize) {
@@ -137,10 +147,14 @@ fn banner(failed: usize) {
 }
 
 fn park(why: &str) -> ! {
-    let _ = sys::enable_ctrl_alt_del();
+    let way_out = if sys::enable_ctrl_alt_del().is_ok() {
+        "press ctrl+alt+del to reboot"
+    } else {
+        "power cycle the machine"
+    };
     kmsg::log(&format!("{why}, so there is nothing left to do. parked"));
     kmsg::to_console(&format!(
-        "\nzevinit: {why}, so there is nothing left to do.\npress ctrl+alt+del to reboot\n"
+        "\nzevinit: {why}, so there is nothing left to do.\n{way_out}\n"
     ));
     loop {
         sys::pause();

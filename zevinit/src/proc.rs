@@ -30,6 +30,7 @@ pub struct Entry {
     pub pid: libc::pid_t,
     pub state: State,
     pub started_at: u64,
+    pub owns_session: bool,
 }
 
 pub struct Table {
@@ -45,17 +46,31 @@ impl Table {
 
     pub fn spawn(&mut self, spec: &'static Spec) -> io::Result<libc::pid_t> {
         let pid = spawn(spec)?;
-        self.track(spec.name, pid);
+        self.track(spec.name, pid, spec.wants_own_session);
         Ok(pid)
     }
 
-    fn track(&mut self, name: &'static str, pid: libc::pid_t) {
+    fn track(&mut self, name: &'static str, pid: libc::pid_t, owns_session: bool) {
         self.entries.push(Entry {
             name,
             pid,
             state: State::Running,
             started_at: sys::monotonic_secs(),
+            owns_session,
         });
+    }
+
+    #[cfg(test)]
+    fn track_for_test(&mut self, name: &'static str, pid: libc::pid_t) {
+        self.track(name, pid, false);
+    }
+
+    pub fn session_leaders(&self) -> Vec<libc::pid_t> {
+        self.entries
+            .iter()
+            .filter(|e| e.owns_session && e.state == State::Running)
+            .map(|e| e.pid)
+            .collect()
     }
 
     pub fn running(&self) -> usize {
@@ -145,7 +160,7 @@ mod tests {
     #[test]
     fn an_unknown_pid_is_not_recorded() {
         let mut table = Table::new();
-        table.track("shell", 100);
+        table.track_for_test("shell", 100);
         assert!(table.record_exit(4242, exited(0)).is_none());
         assert_eq!(table.running(), 1);
     }
@@ -153,7 +168,7 @@ mod tests {
     #[test]
     fn recording_an_exit_stops_counting_it_as_running() {
         let mut table = Table::new();
-        table.track("shell", 100);
+        table.track_for_test("shell", 100);
         assert_eq!(table.running(), 1);
 
         let gone = table.record_exit(100, exited(3)).expect("100 was tracked");
@@ -166,7 +181,7 @@ mod tests {
     #[test]
     fn the_same_pid_is_not_reaped_twice() {
         let mut table = Table::new();
-        table.track("shell", 100);
+        table.track_for_test("shell", 100);
         assert!(table.record_exit(100, exited(0)).is_some());
         assert!(table.record_exit(100, exited(0)).is_none());
     }
@@ -174,9 +189,9 @@ mod tests {
     #[test]
     fn a_recycled_pid_lands_on_the_live_entry() {
         let mut table = Table::new();
-        table.track("first", 100);
+        table.track_for_test("first", 100);
         table.record_exit(100, exited(0));
-        table.track("second", 100);
+        table.track_for_test("second", 100);
 
         let gone = table.record_exit(100, exited(9)).expect("the live 100");
         assert_eq!(gone.name, "second");
@@ -187,7 +202,7 @@ mod tests {
     fn several_children_are_tracked_independently() {
         let mut table = Table::new();
         for pid in 200..205 {
-            table.track("worker", pid);
+            table.track_for_test("worker", pid);
         }
         assert_eq!(table.running(), 5);
 
@@ -200,14 +215,32 @@ mod tests {
     #[test]
     fn forgetting_drops_the_dead_and_keeps_the_living() {
         let mut table = Table::new();
-        table.track("dead", 100);
-        table.track("alive", 101);
+        table.track_for_test("dead", 100);
+        table.track_for_test("alive", 101);
         table.record_exit(100, exited(0));
 
         table.forget_finished();
         assert_eq!(table.running(), 1);
         assert!(table.record_exit(101, exited(0)).is_some());
         assert!(table.record_exit(100, exited(0)).is_none());
+    }
+
+    #[test]
+    fn only_live_session_leaders_get_hung_up() {
+        let mut table = Table::new();
+        table.track("plain", 100, false);
+        table.track("leader", 101, true);
+        table.track("dead leader", 102, true);
+        table.record_exit(102, exited(0));
+
+        assert_eq!(table.session_leaders(), vec![101]);
+    }
+
+    #[test]
+    fn a_table_with_no_sessions_hangs_nothing_up() {
+        let mut table = Table::new();
+        table.track_for_test("plain", 100);
+        assert!(table.session_leaders().is_empty());
     }
 
     #[test]
