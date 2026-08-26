@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::kmsg;
+use crate::log;
 use crate::sys;
 use std::io;
 use std::path::Path;
@@ -17,7 +17,7 @@ pub fn ensure_nodes() {
             continue;
         }
         if let Err(e) = sys::mknod_char(path, mode, major, minor) {
-            kmsg::log(&format!("could not create {path}: {e}"));
+            log::warn(&format!("could not create {path}: {e}"));
         }
     }
 }
@@ -29,7 +29,7 @@ pub fn attach_stdio() -> io::Result<()> {
 
 pub fn take_ctty() {
     if let Err(e) = sys::take_ctty(libc::STDIN_FILENO) {
-        kmsg::log(&format!("no controlling terminal ({e}), job control stays off"));
+        log::warn(&format!("no controlling terminal ({e}), job control stays off"));
     }
 }
 

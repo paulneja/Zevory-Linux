@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::kmsg;
+use crate::log;
 use crate::power::Action;
 use crate::proc::{State, Table};
 use crate::sys::{self, Reaped};
@@ -85,15 +85,15 @@ pub fn reap_all(table: &mut Table) -> Harvest {
             Reaped::NoChildrenLeft => break false,
         };
         let Some(gone) = table.record_exit(pid, status) else {
-            kmsg::log(&format!("reaped orphan [{pid}]"));
+            log::info(&format!("reaped orphan [{pid}]"));
             continue;
         };
         match gone.state {
-            State::Exited(code) => kmsg::log(&format!(
+            State::Exited(code) => log::info(&format!(
                 "{} [{}] exited with {code} after {}s",
                 gone.name, gone.pid, gone.ran_for
             )),
-            State::Killed(signal) => kmsg::log(&format!(
+            State::Killed(signal) => log::warn(&format!(
                 "{} [{}] killed by signal {signal} after {}s",
                 gone.name, gone.pid, gone.ran_for
             )),

@@ -8,7 +8,11 @@ fn cstr(s: &str) -> io::Result<CString> {
 }
 
 fn check(rc: libc::c_int) -> io::Result<()> {
-    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 pub fn getpid() -> i32 {
@@ -58,10 +62,25 @@ pub fn mknod_char(path: &str, mode: u32, major: u32, minor: u32) -> io::Result<(
     check(unsafe { libc::mknod(p.as_ptr(), mode, makedev(major, minor)) })
 }
 
+pub fn open_append(path: &str) -> io::Result<libc::c_int> {
+    let p = cstr(path)?;
+    let flags = libc::O_WRONLY | libc::O_APPEND | libc::O_CLOEXEC | libc::O_NOCTTY;
+    let fd = unsafe { libc::open(p.as_ptr(), flags) };
+    if fd < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
+}
+
 pub fn open_rw(path: &str) -> io::Result<libc::c_int> {
     let p = cstr(path)?;
     let fd = unsafe { libc::open(p.as_ptr(), libc::O_RDWR | libc::O_NOCTTY) };
-    if fd < 0 { Err(io::Error::last_os_error()) } else { Ok(fd) }
+    if fd < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
 }
 
 pub fn dup2_stdio(fd: libc::c_int) -> io::Result<()> {
@@ -247,16 +266,17 @@ pub fn monotonic_secs() -> u64 {
     ts.tv_sec as u64
 }
 
-pub fn write_fd(fd: libc::c_int, bytes: &[u8]) {
+pub fn write_fd(fd: libc::c_int, bytes: &[u8]) -> bool {
     let mut done = 0;
     while done < bytes.len() {
         let left = bytes.len() - done;
         let n = unsafe { libc::write(fd, bytes[done..].as_ptr().cast::<libc::c_void>(), left) };
         if n <= 0 {
-            return;
+            return false;
         }
         done += n as usize;
     }
+    true
 }
 
 #[cfg(test)]

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::kmsg;
+use crate::log;
 use crate::sys::{self, Fork};
 use std::io;
 use std::path::Path;
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
     pub name: &'static str,
     pub path: &'static str,
@@ -127,7 +128,7 @@ fn spawn(spec: &Spec) -> io::Result<libc::pid_t> {
                 let _ = sys::set_ctty(libc::STDIN_FILENO, true);
             }
             let failure = sys::exec(spec.path, spec.argv);
-            kmsg::log(&format!("could not exec {}: {failure}", spec.path));
+            log::error(&format!("could not exec {}: {failure}", spec.path));
             sys::exit_child(127)
         }
     }

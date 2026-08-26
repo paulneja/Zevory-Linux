@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::kmsg;
+use crate::log;
 use crate::sys::{self, MountOpts};
 use std::io;
 
@@ -27,7 +27,7 @@ pub fn mount_all() -> usize {
     let mut failed = 0;
     for v in TABLE {
         if let Err(e) = mount_one(v) {
-            kmsg::log(&format!("could not mount {} as {}: {e}", v.target, v.fstype));
+            log::warn(&format!("could not mount {} as {}: {e}", v.target, v.fstype));
             failed += 1;
         }
     }

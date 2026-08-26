@@ -7,15 +7,17 @@ compile_error!(
 );
 
 mod console;
-mod kmsg;
+mod log;
 mod mount;
 mod power;
 mod proc;
+mod shell;
 mod signal;
 mod sys;
 
 use power::Action;
-use proc::{Spec, Table};
+use proc::Table;
+use shell::{Rescue, Verdict};
 use signal::{Request, Signals, UNTIL_SOMETHING_ARRIVES};
 use std::process;
 
@@ -26,21 +28,6 @@ const RESPAWN_IS_TOO_FAST: u64 = 1;
 const RESPAWN_BACKOFF_SECS: u64 = 1;
 
 const BACKOFF_CHECK_MS: libc::c_int = 100;
-
-const SHELLS: &[Spec] = &[
-    Spec {
-        name: "shell",
-        path: "/bin/sh",
-        argv: &["sh"],
-        wants_own_session: true,
-    },
-    Spec {
-        name: "shell",
-        path: "/bin/busybox",
-        argv: &["busybox", "sh"],
-        wants_own_session: true,
-    },
-];
 
 fn main() {
     install_panic_hook();
@@ -53,11 +40,12 @@ fn main() {
     }
 
     let failed = mount::mount_all();
+    log::keep_every_message();
     console::ensure_nodes();
 
     match console::attach_stdio() {
         Ok(()) => console::take_ctty(),
-        Err(e) => kmsg::log(&format!("no console ({e}), carrying on without one")),
+        Err(e) => log::error(&format!("no console ({e}), carrying on without one")),
     }
 
     let signals = match Signals::install(signal::WATCHED) {
@@ -66,25 +54,25 @@ fn main() {
     };
 
     if let Err(e) = sys::disable_ctrl_alt_del() {
-        kmsg::log(&format!(
+        log::warn(&format!(
             "ctrl+alt+del stays with the kernel ({e}), it will reboot on the spot"
         ));
     }
 
     banner(failed);
 
-    let Some(shell) = SHELLS.iter().find(|s| s.is_available()) else {
+    let Some(mut rescue) = Rescue::new(shell::CANDIDATES) else {
         park("no shell in the initramfs");
     };
 
     let mut table = Table::new();
-    if let Err(e) = table.spawn(shell) {
-        park(&format!("cannot start {} ({e})", shell.path));
+    if let Err(e) = table.spawn(rescue.shell()) {
+        park(&format!("cannot start {} ({e})", rescue.shell().path));
     }
 
-    kmsg::log(READY_MARKER);
+    log::info(READY_MARKER);
 
-    let action = supervise(&mut table, &signals, shell);
+    let action = supervise(&mut table, &signals, &mut rescue);
     let failure = power::execute(action, &signals, &mut table);
     park(&format!(
         "the kernel refused to {} ({failure})",
@@ -92,14 +80,14 @@ fn main() {
     ))
 }
 
-fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> Action {
+fn supervise(table: &mut Table, signals: &Signals, rescue: &mut Rescue) -> Action {
     let mut respawn_at = 0;
 
     loop {
         let idle = table.running() == 0;
         if idle && sys::monotonic_secs() >= respawn_at {
-            if let Err(e) = table.spawn(shell) {
-                park(&format!("cannot start {} ({e})", shell.path));
+            if let Err(e) = table.spawn(rescue.shell()) {
+                park(&format!("cannot start {} ({e})", rescue.shell().path));
             }
         }
 
@@ -117,30 +105,46 @@ fn supervise(table: &mut Table, signals: &Signals, shell: &'static Spec) -> Acti
         };
 
         match signal::classify(signal) {
-            Request::ChildChanged => {
-                let died_at_once = signal::reap_all(table)
-                    .shortest_life
-                    .is_some_and(|ran_for| ran_for < RESPAWN_IS_TOO_FAST);
-                if died_at_once {
+            Request::ChildChanged => match signal::reap_all(table).shortest_life {
+                None => {}
+                Some(ran_for) if ran_for >= RESPAWN_IS_TOO_FAST => rescue.survived(),
+                Some(_) => {
                     respawn_at = sys::monotonic_secs() + RESPAWN_BACKOFF_SECS;
+                    give_up_or_fall_back(rescue);
                 }
-            }
-            Request::Reload => kmsg::log(&format!(
+            },
+            Request::Reload => log::info(&format!(
                 "{} asked for a reload, zevinit has no configuration to reread",
                 signal::name(signal)
             )),
             Request::Shutdown(action) => return action,
             Request::Unknown(other) => {
-                kmsg::log(&format!("nothing is wired to signal {other}"));
+                log::info(&format!("nothing is wired to signal {other}"));
             }
         }
     }
 }
 
+fn give_up_or_fall_back(rescue: &mut Rescue) {
+    let dying = rescue.shell().path;
+    match rescue.failed() {
+        Verdict::KeepTrying => {}
+        Verdict::MovedOn(next) => {
+            log::error(&format!(
+                "{dying} keeps dying, falling back to {}",
+                next.path
+            ));
+        }
+        Verdict::OutOfOptions => park(&format!(
+            "every shell we know about dies on startup, {dying} was the last one"
+        )),
+    }
+}
+
 fn banner(failed: usize) {
-    kmsg::to_console("\nZevory Linux\n\n");
+    log::to_console("\nZevory Linux\n\n");
     if failed > 0 {
-        kmsg::to_console(&format!(
+        log::to_console(&format!(
             "  {failed} filesystem(s) did not mount, look above for which\n\n"
         ));
     }
@@ -152,8 +156,8 @@ fn park(why: &str) -> ! {
     } else {
         "power cycle the machine"
     };
-    kmsg::log(&format!("{why}, so there is nothing left to do. parked"));
-    kmsg::to_console(&format!(
+    log::error(&format!("{why}, so there is nothing left to do. parked"));
+    log::to_console(&format!(
         "\nzevinit: {why}, so there is nothing left to do.\n{way_out}\n"
     ));
     loop {
@@ -163,13 +167,13 @@ fn park(why: &str) -> ! {
 
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
-        kmsg::log(&format!("panic: {info}"));
+        log::error(&format!("panic: {info}"));
     }));
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{READY_MARKER, SHELLS};
+    use super::READY_MARKER;
 
     #[test]
     fn diagnose_boot_still_greps_for_our_marker() {
@@ -184,24 +188,5 @@ mod tests {
             "{} stopped grepping for {READY_MARKER:?}",
             script.display()
         );
-    }
-
-    #[test]
-    fn every_shell_passes_its_own_name_as_argv0() {
-        for shell in SHELLS {
-            let argv0 = shell.argv.first().expect("a shell needs an argv[0]");
-            assert!(
-                shell.path.ends_with(argv0),
-                "{} would be exec'd as {argv0:?}, which picks the wrong busybox applet",
-                shell.path
-            );
-        }
-    }
-
-    #[test]
-    fn shells_get_their_own_session() {
-        for shell in SHELLS {
-            assert!(shell.wants_own_session, "{} needs job control", shell.path);
-        }
     }
 }

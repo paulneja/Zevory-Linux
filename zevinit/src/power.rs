@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::kmsg;
+use crate::log;
 use crate::proc::Table;
 use crate::signal::{self, Request, Signals};
 use crate::sys;
@@ -36,13 +36,13 @@ impl Action {
 }
 
 pub fn execute(action: Action, signals: &Signals, table: &mut Table) -> io::Error {
-    kmsg::to_console(&format!("\nzevory is going down for {}\n", action.name()));
-    kmsg::log(&format!("{} requested", action.name()));
+    log::to_console(&format!("\nzevory is going down for {}\n", action.name()));
+    log::info(&format!("{} requested", action.name()));
 
     stop_everything(signals, table);
     sys::flush_filesystems();
 
-    kmsg::log(&format!("asking the kernel to {}", action.name()));
+    log::info(&format!("asking the kernel to {}", action.name()));
     sys::hand_over_to_kernel(action.kernel_command())
 }
 
@@ -51,7 +51,7 @@ fn stop_everything(signals: &Signals, table: &mut Table) {
         return;
     }
 
-    kmsg::to_console("stopping everything\n");
+    log::to_console("stopping everything\n");
     for leader in table.session_leaders() {
         sys::signal_group(leader, libc::SIGHUP);
     }
@@ -61,13 +61,13 @@ fn stop_everything(signals: &Signals, table: &mut Table) {
         return;
     }
 
-    kmsg::log(&format!("still busy after {GRACE_SECS}s, sending SIGKILL"));
-    kmsg::to_console(&format!(
+    log::warn(&format!("still busy after {GRACE_SECS}s, sending SIGKILL"));
+    log::to_console(&format!(
         "something ignored the first {GRACE_SECS}s, killing it\n"
     ));
     sys::signal_everyone(libc::SIGKILL);
     if !wait_for_silence(signals, table, AFTER_KILL_SECS) {
-        kmsg::log("something outlived SIGKILL, going down regardless");
+        log::error("something outlived SIGKILL, going down regardless");
     }
 }
 
@@ -84,7 +84,7 @@ fn wait_for_silence(signals: &Signals, table: &mut Table, secs: u64) -> bool {
         if let Ok(Some(arrived)) = signals.wait(CHECK_EVERY_MS)
             && signal::classify(arrived) != Request::ChildChanged
         {
-            kmsg::log(&format!(
+            log::info(&format!(
                 "{} arrived while shutting down, already on it",
                 signal::name(arrived)
             ));
