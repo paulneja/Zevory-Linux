@@ -25,7 +25,17 @@ for applet in $(./busybox --list); do
   [ "$applet" = busybox ] || ln -sf busybox "$applet"
 done
 
-cp "$ROOT/initramfs/init" "$OUT/init"
+ZEVINIT_BIN="$ROOT/zevinit/target/x86_64-unknown-linux-musl/release/zevinit"
+
+if [ ! -x "$ZEVINIT_BIN" ]; then
+  if ! command -v cargo >/dev/null; then
+    echo "ERROR: cargo not found and zevinit is not built. run scripts/deps.sh first" >&2
+    exit 1
+  fi
+  bash "$ROOT/scripts/build-zevinit.sh"
+fi
+
+cp "$ZEVINIT_BIN" "$OUT/init"
 chmod +x "$OUT/init"
 
 echo "done: $OUT"
