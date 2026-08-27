@@ -27,13 +27,7 @@ done
 
 ZEVINIT_BIN="$ROOT/zevinit/target/x86_64-unknown-linux-musl/release/zevinit"
 
-if [ ! -x "$ZEVINIT_BIN" ]; then
-  if ! command -v cargo >/dev/null; then
-    echo "ERROR: cargo not found and zevinit is not built. run scripts/deps.sh first" >&2
-    exit 1
-  fi
-  bash "$ROOT/scripts/build-zevinit.sh"
-fi
+"$ROOT/scripts/build-zevinit.sh"
 
 cp "$ZEVINIT_BIN" "$OUT/init"
 chmod +x "$OUT/init"
