@@ -8,10 +8,11 @@ cd "$ROOT"
 if [ "$#" -gt 0 ]; then
   FILES=("$@")
 elif git rev-parse --git-dir >/dev/null 2>&1; then
-  mapfile -t FILES < <(git ls-files '*.rs' '*.sh' '*.toml' 'initramfs/init')
+  mapfile -t FILES < <(git ls-files '*.rs' '*.sh' '*.toml')
 else
-  mapfile -t FILES < <(find . -path ./zevinit/target -prune -o \
-    \( -name '*.rs' -o -name '*.sh' -o -name '*.toml' -o -path './initramfs/init' \) -print)
+  mapfile -t FILES < <(find . \
+    \( -path ./sources -o -path ./build -o -path ./zevinit/target -o -path ./.git \) -prune -o \
+    \( -name '*.rs' -o -name '*.sh' -o -name '*.toml' \) -print)
 fi
 
 if [ "${#FILES[@]}" -eq 0 ]; then

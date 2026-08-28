@@ -5,8 +5,6 @@
 *.iso
 *.qcow2
 
-# rust. target is generated, the lock is not: zevinit is a binary and we pin its
-# deps the same way we pin the kernel and busybox
 /target/
 
 # editor / os
