@@ -189,4 +189,39 @@ mod tests {
             script.display()
         );
     }
+} #[cfg(test)]
+mod integration {
+    use crate::power::Action;
+    use crate::signal::{self, Request, WATCHED};
+
+    #[test]
+    fn every_shutdown_signal_maps_to_an_action_with_a_name() {
+        for &s in WATCHED {
+            if let Request::Shutdown(action) = signal::classify(s) {
+                let n = action.name();
+                assert!(!n.is_empty(), "action for signal {s} has an empty name");
+            }
+        }
+    }
+
+    #[test]
+    fn signal_classify_never_returns_unknown_for_watched() {
+        for &s in WATCHED {
+            assert_ne!(
+                signal::classify(s),
+                Request::Unknown(s),
+                "signal {s} is watched but classify returns Unknown"
+            );
+        }
+    }
+
+    #[test]
+    fn halt_poweroff_reboot_have_distinct_names() {
+        let names: Vec<&str> = [Action::Halt, Action::PowerOff, Action::Reboot]
+            .iter()
+            .map(|a| a.name())
+            .collect();
+        let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(names.len(), unique.len());
+    }
 }
