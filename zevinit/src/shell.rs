@@ -136,6 +136,20 @@ mod tests {
     }
 
     #[test]
+    fn the_shell_we_fall_back_to_gets_a_full_set_of_chances() {
+        let mut rescue = two();
+        for _ in 0..STRIKES_BEFORE_MOVING_ON {
+            rescue.failed();
+        }
+        assert_eq!(rescue.shell().path, "/second");
+
+        for _ in 1..STRIKES_BEFORE_MOVING_ON {
+            assert_eq!(rescue.failed(), Verdict::KeepTrying);
+        }
+        assert_eq!(rescue.failed(), Verdict::OutOfOptions);
+    }
+
+    #[test]
     fn running_out_of_shells_is_the_end_of_the_road() {
         let mut rescue = Rescue::over(vec![&FIRST]).expect("one candidate is not empty");
         let mut verdict = Verdict::KeepTrying;

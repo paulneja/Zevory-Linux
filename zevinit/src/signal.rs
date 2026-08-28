@@ -152,6 +152,11 @@ mod tests {
     }
 
     #[test]
+    fn a_child_signal_is_what_sets_off_the_reaping() {
+        assert_eq!(classify(libc::SIGCHLD), Request::ChildChanged);
+    }
+
+    #[test]
     fn children_are_still_watched() {
         assert!(
             WATCHED.contains(&libc::SIGCHLD),

@@ -111,6 +111,13 @@ mod tests {
     }
 
     #[test]
+    fn each_action_is_named_after_the_command_that_asks_for_it() {
+        assert_eq!(Action::Reboot.name(), "reboot");
+        assert_eq!(Action::PowerOff.name(), "poweroff");
+        assert_eq!(Action::Halt.name(), "halt");
+    }
+
+    #[test]
     fn the_kernel_commands_are_the_ones_we_mean() {
         assert_eq!(Action::Reboot.kernel_command(), libc::RB_AUTOBOOT);
         assert_eq!(Action::PowerOff.kernel_command(), libc::RB_POWER_OFF);
