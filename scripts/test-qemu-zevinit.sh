@@ -53,6 +53,16 @@ boot_driving_the_shell() {
       -nographic -no-reboot "${ACCEL[@]}" -m 512 > "$log" 2>&1
 }
 
+boot_then_interrupt() {
+  local image="$1" log="$2" before="$3" after="$4"
+  ( sleep "$((6 * SLOW))"; cat "$before"; sleep "$((3 * SLOW))"; printf '\003'
+    sleep "$((2 * SLOW))"; cat "$after"; sleep "$((4 * SLOW))" ) \
+    | timeout "$((40 * SLOW))" qemu-system-x86_64 \
+      -kernel "$KERNEL" -initrd "$image" \
+      -append "console=tty0 console=ttyS0 loglevel=7" \
+      -nographic -no-reboot "${ACCEL[@]}" -m 512 > "$log" 2>&1
+}
+
 boot_pressing_ctrl_alt_del() {
   local image="$1" log="$2" settle="$3"
   ( sleep "$((settle * SLOW))"; echo "sendkey ctrl-alt-delete"; sleep "$((6 * SLOW))"; echo quit ) \
@@ -123,18 +133,35 @@ EOF
   expect "the ready marker is logged"       "$log" "bootstrap OK, shell ready"
 }
 
-test_the_shell_can_receive_every_signal() {
-  case_begin "pid 1 keeps its signals to itself and the shell can receive all of them"
+test_pid_one_keeps_its_signals_to_itself() {
+  case_begin "pid 1 blocks what it watches, and the shell ends up unblocked"
   local log="$WORK/masks.log"
   cat > "$WORK/masks.in" <<'EOF'
 echo "PID1BLK=$(grep SigBlk /proc/1/status | awk '{print $2}')"
-echo "SHELLBLK=$(grep SigBlk /proc/$$/status | awk '{print $2}')"
+while IFS= read -r l; do case $l in SigBlk*) echo "SHELLBLK=$l" ;; esac; done < /proc/self/status
 poweroff -f
 EOF
   boot_driving_the_shell "$WORK/normal.cpio.zst" "$log" 6 4 "$WORK/masks.in"
   booted "$log" || return
-  refuse "pid 1 blocks the signals it watches"     "$log" "PID1BLK=0000000000000000"
-  expect "the shell ends up blocking nothing"      "$log" "SHELLBLK=0000000000000000"
+  refuse "pid 1 blocks the signals it watches"  "$log" "PID1BLK=0000000000000000"
+  expect "the shell ends up blocking nothing"   "$log" "SHELLBLK=SigBlk:[[:space:]]*0{16}"
+}
+
+test_ctrl_c_interrupts_the_foreground_job() {
+  case_begin "ctrl+c reaches the foreground job and not pid 1"
+  local log="$WORK/interrupt.log"
+  printf 'sleep 30\n' > "$WORK/interrupt.before"
+  cat > "$WORK/interrupt.after" <<'EOF'
+echo "AFTERINT=$?"
+echo "STILLHERE=$(cat /proc/1/comm)"
+poweroff -f
+EOF
+  boot_then_interrupt "$WORK/normal.cpio.zst" "$log" \
+    "$WORK/interrupt.before" "$WORK/interrupt.after"
+  booted "$log" || return
+  expect "the job dies of SIGINT, not of anything else" "$log" "AFTERINT=130"
+  expect "and pid 1 is untouched"                       "$log" "STILLHERE=init"
+  refuse "pid 1 never saw the interrupt itself"         "$log" "zevinit: reboot requested"
 }
 
 test_orphans_are_reaped_without_leaking() {
@@ -240,7 +267,8 @@ echo "booting zevinit under qemu, $(( SLOW == 1 ? 0 : 1 )) means no kvm: SLOW=$S
 prepare_images
 
 run ownership  test_the_shell_belongs_to_pid_one
-run masks      test_the_shell_can_receive_every_signal
+run masks      test_pid_one_keeps_its_signals_to_itself
+run interrupt  test_ctrl_c_interrupts_the_foreground_job
 run orphans    test_orphans_are_reaped_without_leaking
 run reboot     test_a_shutdown_request_brings_the_machine_down reboot "reboot: Restarting system"
 run poweroff   test_a_shutdown_request_brings_the_machine_down poweroff "reboot: Power down"
