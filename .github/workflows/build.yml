@@ -1,0 +1,123 @@
+name: build and test
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: how much to run
+        type: choice
+        default: zevinit
+        options:
+          - zevinit
+          - full
+
+jobs:
+  zevinit:
+    name: zevinit
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    timeout-minutes: 20
+    steps:
+      - name: refresh the package database and get git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+
+      - name: let git trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: rust toolchain and musl target
+        run: |
+          pacman -S --noconfirm --needed rustup gcc musl
+          rustup default stable
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: no comments anywhere
+        run: ./scripts/check-comments.sh
+
+      - name: clippy with warnings as errors
+        working-directory: zevinit
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: unit tests
+        working-directory: zevinit
+        run: cargo test
+
+      - name: the binary is static or it is not pid 1
+        run: ./scripts/build-zevinit.sh
+
+  full:
+    name: whole pipeline and iso
+    if: inputs.scope == 'full'
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    timeout-minutes: 180
+    steps:
+      - name: refresh the package database and get git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+
+      - name: let git trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: host dependencies
+        run: ./scripts/deps.sh
+
+      - name: cache the upstream tarballs
+        uses: actions/cache@v4
+        with:
+          path: sources/_dl
+          key: upstream-${{ hashFiles('kernel/VERSION', 'busybox/VERSION', 'boot/limine/VERSION') }}
+
+      - name: kernel
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./scripts/fetch-kernel.sh
+          ./scripts/configure-kernel.sh
+          JOBS=$(nproc) ./scripts/build-kernel.sh
+
+      - name: busybox
+        run: |
+          ./scripts/fetch-busybox.sh
+          ./scripts/configure-busybox.sh
+          JOBS=$(nproc) ./scripts/build-busybox.sh
+
+      - name: initramfs with zevinit as init
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./scripts/build-initramfs-root.sh
+          ./scripts/build-initramfs.sh
+          file build/initramfs/root/init | grep -q 'static-pie linked'
+
+      - name: iso
+        run: |
+          ./scripts/fetch-limine.sh
+          ./scripts/build-iso.sh
+          sha256sum build/zevory-dev.iso
+
+      - name: the iso boots on bios
+        run: ./scripts/test-qemu-bios.sh
+
+      - name: the iso boots on uefi
+        run: ./scripts/test-qemu-uefi.sh
+
+      - name: zevinit behaves as pid 1
+        run: ./scripts/test-qemu-zevinit.sh
+
+      - name: keep the iso
+        uses: actions/upload-artifact@v4
+        with:
+          name: zevory-dev-iso
+          path: build/zevory-dev.iso
+          retention-days: 14
+
+      - name: keep the boot logs when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-logs
+          path: |
+            build/test-*.log
+            build/zevinit-tests/*.log
+          retention-days: 14
