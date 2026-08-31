@@ -21,7 +21,7 @@ jobs:
       - name: refresh the package database and get git
         run: pacman -Syu --noconfirm --needed git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: let git trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -56,7 +56,7 @@ jobs:
       - name: refresh the package database and get git
         run: pacman -Syu --noconfirm --needed git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: let git trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -64,15 +64,11 @@ jobs:
       - name: host dependencies
         run: ./scripts/deps.sh
 
-      - name: cache the upstream tarballs
-        uses: actions/cache@v4
-        with:
-          path: sources/_dl
-          key: upstream-${{ hashFiles('kernel/VERSION', 'busybox/VERSION', 'boot/limine/VERSION') }}
+      - name: put cargo on the path for every step
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: kernel
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
           ./scripts/fetch-kernel.sh
           ./scripts/configure-kernel.sh
           JOBS=$(nproc) ./scripts/build-kernel.sh
@@ -85,7 +81,6 @@ jobs:
 
       - name: initramfs with zevinit as init
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
           ./scripts/build-initramfs-root.sh
           ./scripts/build-initramfs.sh
           file build/initramfs/root/init | grep -q 'static-pie linked'
@@ -106,7 +101,7 @@ jobs:
         run: ./scripts/test-qemu-zevinit.sh
 
       - name: keep the iso
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zevory-dev-iso
           path: build/zevory-dev.iso
@@ -114,7 +109,7 @@ jobs:
 
       - name: keep the boot logs when something fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: boot-logs
           path: |
