@@ -34,7 +34,6 @@ xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
     -efi-boot-part --efi-boot-image --protective-msdos-label \
     "$ISOROOT" -o "$OUT"
 
-
 "$LB/limine" bios-install "$OUT"
 
 echo "done: $OUT"

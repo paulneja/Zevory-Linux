@@ -14,7 +14,6 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
-
 make -C "$SRC_DIR" O="$BUILD_DIR" CC=musl-gcc defconfig
 
 sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' "$BUILD_DIR/.config"

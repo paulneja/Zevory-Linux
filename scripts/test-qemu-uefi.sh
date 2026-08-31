@@ -20,7 +20,6 @@ for f in "$OVMF_CODE" "$OVMF_VARS_TEMPLATE"; do
     exit 1; }
 done
 
-# same story as the bios test, see the comment there
 if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
   ACCEL=(-enable-kvm -cpu host)
   TIMEOUT="${TIMEOUT:-40}"

@@ -5,9 +5,7 @@
 *.iso
 *.qcow2
 
-# rust, for later
 /target/
-Cargo.lock
 
 # editor / os
 .vscode/

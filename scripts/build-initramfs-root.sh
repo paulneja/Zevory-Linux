@@ -25,7 +25,11 @@ for applet in $(./busybox --list); do
   [ "$applet" = busybox ] || ln -sf busybox "$applet"
 done
 
-cp "$ROOT/initramfs/init" "$OUT/init"
+ZEVINIT_BIN="$ROOT/zevinit/target/x86_64-unknown-linux-musl/release/zevinit"
+
+"$ROOT/scripts/build-zevinit.sh"
+
+cp "$ZEVINIT_BIN" "$OUT/init"
 chmod +x "$OUT/init"
 
 echo "done: $OUT"

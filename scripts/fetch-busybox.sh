@@ -3,6 +3,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CURL=(curl -fL --retry 5 --retry-delay 3 --retry-all-errors)
+[ -t 1 ] || CURL+=(-sS)
 VERSION="$(tr -d '[:space:]' < "$ROOT/busybox/VERSION")"
 FPR="C9E9416F76E610DBD09D040F47B70C55ACC9965B"
 
@@ -29,8 +32,8 @@ gpg --homedir "$GNUPGHOME" --list-keys "$FPR" >/dev/null 2>&1 || {
 }
 
 echo "fetching $TAR..."
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$TAR" "$BASE_URL/$TAR"
-curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
+"${CURL[@]}" -o "$DL_DIR/$TAR" "$BASE_URL/$TAR"
+"${CURL[@]}" -o "$DL_DIR/$SIG" "$BASE_URL/$SIG"
 
 gpg --homedir "$GNUPGHOME" --verify "$DL_DIR/$SIG" "$DL_DIR/$TAR"
 
