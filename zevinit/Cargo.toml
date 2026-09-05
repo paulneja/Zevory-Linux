@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [profile.release]
 panic = "abort"

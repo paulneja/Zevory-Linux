@@ -1,0 +1,16 @@
+[unit]
+description = "Structured logging daemon"
+requires = ["devtmpfs.service"]
+after = ["devtmpfs.service"]
+before = ["login.service"]
+
+[service]
+kind = "simple"
+start = "/usr/bin/zevlogd --foreground"
+stop = "/usr/bin/zevlogd --drain"
+restart = "on-failure"
+restart_delay = 1
+restart_limit = 5
+start_timeout = 30
+stop_timeout = 10
+environment = ["PATH=/usr/bin:/bin"]
