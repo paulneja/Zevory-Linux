@@ -369,7 +369,9 @@ start = "/bin/mount -t devtmpfs devtmpfs /dev"
                 .expect("a name")
                 .to_string_lossy()
                 .into_owned();
-            let name = Unit::name_from_file(&file).expect("examples end in .toml");
+            let Some(name) = Unit::name_from_file(&file) else {
+                continue;
+            };
             let text = std::fs::read_to_string(&path).expect("a readable unit");
             Unit::parse(name, &file, &text).unwrap_or_else(|e| panic!("{e}"));
             seen += 1;

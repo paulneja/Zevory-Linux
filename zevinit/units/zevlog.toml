@@ -1,8 +1,8 @@
 [unit]
 description = "Structured logging daemon"
-requires = ["devtmpfs.service"]
-after = ["devtmpfs.service"]
-before = ["login.service"]
+requires = ["devtmpfs"]
+after = ["devtmpfs"]
+before = ["login"]
 
 [service]
 kind = "simple"

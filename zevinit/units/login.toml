@@ -1,9 +1,9 @@
 [unit]
 description = "Console login"
-requires = ["devtmpfs.service"]
-wants = ["zevlog.service"]
-after = ["devtmpfs.service", "zevlog.service"]
-conflicts = ["rescue.service"]
+requires = ["devtmpfs"]
+wants = ["zevlog"]
+after = ["devtmpfs", "zevlog"]
+conflicts = ["rescue"]
 
 [service]
 kind = "simple"
